@@ -37,6 +37,21 @@ final class NotLoopingMonitor: Injectable {
     /// from undelivered insulin.
     private static let criticalMinutes: Int = 120
 
+    /// Quiet hours (local time). Warning steps shorter than
+    /// `nightMinimumMinutes` are dropped when they would fire inside this
+    /// window. The check uses each step's fire time, not the arm time, because
+    /// the whole ladder is handed to iOS up front. Critical is never affected.
+    private static let nightStartHour = 22 // 10 pm
+    private static let nightEndHour = 7 // 7 am
+    private static let nightMinimumMinutes = 40
+
+    private static func isNight(_ date: Date) -> Bool {
+        let hour = Calendar.current.component(.hour, from: date)
+        return nightStartHour > nightEndHour
+            ? (hour >= nightStartHour || hour < nightEndHour)
+            : (hour >= nightStartHour && hour < nightEndHour)
+    }
+
     /// Critical escalation. Keeps the bare identifier so existing Critical
     /// tier configuration carries over.
     private static let alertID = Alert.Identifier(
@@ -99,6 +114,8 @@ final class NotLoopingMonitor: Injectable {
 
         let now = Date()
         for (index, minutes) in Self.warningMinutes.enumerated() {
+            let fireDate = lastLoopDate.addingTimeInterval(TimeInterval(minutes * 60))
+            if minutes < Self.nightMinimumMinutes, Self.isNight(fireDate) { continue }
             issue(identifier: Self.warningID(index + 1), after: minutes, level: .timeSensitive, now: now)
         }
         issue(identifier: Self.alertID, after: Self.criticalMinutes, level: .critical, now: now)
