@@ -10,7 +10,7 @@ on:
 env:
   GH_PAT: ${{ secrets.GH_PAT }}
   UPSTREAM_REPO: nightscout/Trio
-  UPSTREAM_BRANCH: ${{ github.ref_name }} # branch on upstream repository to sync from (replace with specific branch name if needed)
+  UPSTREAM_BRANCH: dev # custom branch: always sync from upstream dev (was ${{ github.ref_name }})
   TARGET_BRANCH: ${{ github.ref_name }} # target branch on fork to be kept in sync
 
 jobs:
