@@ -363,6 +363,7 @@ enum SettingItems {
                 "Signal Loss",
                 "Device Expired",
                 "Not Looping",
+                "Not Looping Warnings",
                 "Algorithm"
             ],
             path: ["Notifications", "Device Alarms"]

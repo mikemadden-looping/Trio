@@ -20,6 +20,7 @@ extension DeviceAlarms {
         let resolver: Resolver
         @StateObject var state = StateModel()
         @StateObject private var store = DeviceAlertsStore.shared
+        @StateObject private var alertConfigStore = GlucoseAlertsStore.shared
 
         @State private var sheet: DeviceAlarmSheet?
         @State private var pendingNewSeverity: DeviceAlertSeverity?
@@ -69,6 +70,8 @@ extension DeviceAlarms {
                         }
                     }.listRowBackground(Color.chart)
                 }
+
+                notLoopingWarningsSection
 
                 Section {
                     Text("Day & Night Windows")
@@ -122,6 +125,53 @@ extension DeviceAlarms {
                 }
             }
             .onAppear(perform: configureView)
+        }
+
+        // MARK: - Not Looping warnings
+
+        private var notLoopingWarningsSection: some View {
+            Section(
+                header: Text("Not Looping Warnings"),
+                footer: Text(
+                    "How long Trio can go without looping before the first warning, in each window. Later warnings still follow every 20 minutes, and the Critical alarm at 2 hours always fires."
+                )
+            ) {
+                notLoopingPicker(
+                    title: String(localized: "Day"),
+                    systemImage: "sun.max.fill",
+                    tint: .orange,
+                    selection: $alertConfigStore.configuration.notLoopingFirstWarningDayMinutes
+                )
+                notLoopingPicker(
+                    title: String(localized: "Night"),
+                    systemImage: "moon.stars.fill",
+                    tint: .indigo,
+                    selection: $alertConfigStore.configuration.notLoopingFirstWarningNightMinutes
+                )
+            }.listRowBackground(Color.chart)
+        }
+
+        private func notLoopingPicker(
+            title: String,
+            systemImage: String,
+            tint: Color,
+            selection: Binding<Int>
+        ) -> some View {
+            Picker(selection: selection) {
+                ForEach(GlucoseAlertConfiguration.notLoopingFirstWarningChoices, id: \.self) { minutes in
+                    Text(
+                        String(
+                            format: String(localized: "After %d min", comment: "Not Looping first warning threshold"),
+                            minutes
+                        )
+                    ).tag(minutes)
+                }
+            } label: {
+                HStack {
+                    Image(systemName: systemImage).foregroundStyle(tint)
+                    Text(title)
+                }
+            }
         }
 
         private func handleSheetDismiss() {

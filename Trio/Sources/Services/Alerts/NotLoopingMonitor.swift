@@ -29,6 +29,10 @@ final class NotLoopingMonitor: Injectable {
 
     private var lastLoopDate = Date()
 
+    /// Day/Night first-warning thresholds. Production reads the shared alert
+    /// store; the test seam keeps the stock defaults (20 min day and night).
+    @SyncAccess private var configuration = GlucoseAlertConfiguration()
+
     /// Minutes of staleness for each Time-Sensitive warning step.
     private static let warningMinutes: [Int] = [20, 40, 60, 80, 100]
 
@@ -36,21 +40,6 @@ final class NotLoopingMonitor: Injectable {
     /// of no automated dosing, which is the window discussed for onset of harm
     /// from undelivered insulin.
     private static let criticalMinutes: Int = 120
-
-    /// Quiet hours (local time). Warning steps shorter than
-    /// `nightMinimumMinutes` are dropped when they would fire inside this
-    /// window. The check uses each step's fire time, not the arm time, because
-    /// the whole ladder is handed to iOS up front. Critical is never affected.
-    private static let nightStartHour = 22 // 10 pm
-    private static let nightEndHour = 7 // 7 am
-    private static let nightMinimumMinutes = 40
-
-    private static func isNight(_ date: Date) -> Bool {
-        let hour = Calendar.current.component(.hour, from: date)
-        return nightStartHour > nightEndHour
-            ? (hour >= nightStartHour || hour < nightEndHour)
-            : (hour >= nightStartHour && hour < nightEndHour)
-    }
 
     /// Critical escalation. Keeps the bare identifier so existing Critical
     /// tier configuration carries over.
@@ -75,6 +64,21 @@ final class NotLoopingMonitor: Injectable {
         injectServices(resolver)
         subscribe(to: apsManager.lastLoopDateSubject.eraseToAnyPublisher())
         broadcaster.register(SnoozeObserver.self, observer: self)
+
+        // Re-arm when the user changes the Day/Night first-warning thresholds
+        // or the window boundaries, so the new values apply to the current
+        // stall rather than waiting for the next loop.
+        let store = GlucoseAlertsStore.shared
+        configuration = store.configuration
+        store.$configuration
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] new in
+                guard let self else { return }
+                self.configuration = new
+                self.rescheduleAlarm()
+            }
+            .store(in: &subscriptions)
     }
 
     /// Publisher-only seam for tests: assigns the alert manager directly and
@@ -113,9 +117,13 @@ final class NotLoopingMonitor: Injectable {
         else { return }
 
         let now = Date()
+        let configuration = self.configuration
         for (index, minutes) in Self.warningMinutes.enumerated() {
+            // Skip steps earlier than the first-warning threshold for the
+            // window the step would fire in. Judged at the fire time, not now,
+            // because the ladder is handed to iOS up front.
             let fireDate = lastLoopDate.addingTimeInterval(TimeInterval(minutes * 60))
-            if minutes < Self.nightMinimumMinutes, Self.isNight(fireDate) { continue }
+            guard minutes >= configuration.notLoopingFirstWarningMinutes(at: fireDate) else { continue }
             issue(identifier: Self.warningID(index + 1), after: minutes, level: .timeSensitive, now: now)
         }
         issue(identifier: Self.alertID, after: Self.criticalMinutes, level: .critical, now: now)
